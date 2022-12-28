@@ -1,0 +1,43 @@
+; 顺序写文件，每个线程单独一个文件
+
+[global]
+; 目录需要事先存在
+directory=/mnt/pmem2
+filename=fio-small-rw
+direct=1
+buffered=0
+thread=1
+cpus_allowed=20-25 #,60-79
+cpus_allowed_policy=split
+numa_cpu_nodes=1
+numa_mem_policy=bind:1
+kb_base=1024
+; verify=md5
+do_verify=1
+ioengine=sync
+create_fsync=1
+# create_only=1
+# 运行完负载后，删除文件
+# unlink=1
+numjobs=1
+description=顺序写文件,单个线程单独一个文件,io大小变化
+size=3G
+# overwrite=1
+
+[seq-write-4KB]
+wait_for_previous
+bs=4K
+rw=write
+
+[rand-rw]
+wait_for_previous
+rw=write
+# rwmixwrite=75
+fsync=1
+# 4k/14:2k/14:1k/14:512B/14:256B/14:128B/14:64B/
+# bssplit=1k/16:512B/16:256B/16:128B/16:64B/16:2k/
+bs=32
+time_based
+runtime=30
+# unified_rw_reporting=1
+

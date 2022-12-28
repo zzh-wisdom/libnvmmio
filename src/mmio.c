@@ -242,13 +242,14 @@ void create_checkpoint_thread(mmio_t *mmio) {
   if (__glibc_unlikely(s != 0)) {
     HANDLE_ERROR("pthread_create");
   }
-  PRINT("create checkpoint thread: %lu",
+  printf("create checkpoint thread: %lu\n",
         (unsigned long)mmio->checkpoint_thread);
 }
 
 inline static void checkpoint_entry(mmio_t *mmio, idx_entry_t *entry) {
   void *dst, *src;
 
+  // printf("checkpoint_entry\n");
   if (entry->policy == REDO) {
     dst = entry->dst + entry->offset;
     src = entry->log + entry->offset;
@@ -282,11 +283,13 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   bravo_read_lock(&mmio->rwlock);
 
   if (__glibc_unlikely(check_expend(mmio, offset, len))) {
+    // printf("WARNNING: expend_mmio\n");
     expend_mmio(mmio, fd, offset, len);
   }
 
   /*
    * Acquire all writer-locks of required logs.
+   * entries_head 带回所有受影响的log entry
    */
   LOCK_ENTRIES(wr, mmio, offset, len, entries_head);
 
@@ -307,6 +310,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
     log_start = entry->log + log_offset;
     log_len = LOG_SIZE(log_size) - log_offset;
 
+    n = len - ret;
     if ((unsigned long)n > log_len) {
       n = log_len;
     }
@@ -338,7 +342,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
 
       switch (check_log(log_start, log_end, prev_start, prev_end)) {
         case 1:
-          PRINT("overwrite case 1");
+          PRINT("overwrite case 1"); // 把之前的数据拷贝过来，合并成一整个log
           overwrite_src = dst + n;
           overwrite_len = prev_start - log_end;
           NTSTORE(log_end, overwrite_src, overwrite_len);
@@ -350,7 +354,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
           entry->offset = log_offset;
           entry->len = prev_end - log_start;
           break;
-        case 3:
+        case 3:  // 全覆盖的情况下，还是需要修改idx entry，造成大量的随机小写
           PRINT("overwrite case 3");
           entry->offset = log_offset;
           entry->len = n;
@@ -392,6 +396,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   PRINT("mfence");
 
   if (mmio->policy == UNDO) {
+    printf("undo log, write origin data\n");
     NTSTORE(mmio->start + offset, buf, len);
     PRINT("update the file after undo logging: ntstore(%p, %p, %lu)",
           mmio->start + offset, buf, len);
@@ -400,6 +405,8 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   }
 
   if (mmio->fsize < offset + ret) {
+    // printf("update mmio->fsize: %lu, offset: %lu, ret: %lu\n", mmio->fsize, offset, ret);
+    // assert(0);
     mmio->fsize = offset + ret;
     PRINT("update mmio->fsize=%lu", mmio->fsize);
   }
@@ -436,6 +443,7 @@ inline ssize_t read_redolog(struct slist_head *entries_head, void *dst,
     }
 
     if (entry->len > 0) {
+      // printf("read from redo log");
       /* If the redo log exists */
       log_start = entry->log + entry->offset;
       log_end = log_start + entry->len;
@@ -569,7 +577,7 @@ ssize_t mmio_read(mmio_t *mmio, off_t offset, void *buf, size_t len) {
     case UNDO:
       /* original file => buf */
       memcpy(buf, mmio->start + offset, len);
-      PRINT("read from the file: memcpy(%p, %p, %lu)", buf,
+      PRINT("UNDO read from the file: memcpy(%p, %p, %lu)", buf,
             mmio->start + offset, len);
       break;
     case REDO:

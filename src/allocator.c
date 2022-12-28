@@ -414,6 +414,7 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
 
   prot = get_prot(flags);
 
+  // printf("%s: mmap size: %lu MB\n", __func__, len >> 20);
   addr = mmap(NULL, len, prot, MAP_SHARED | MAP_POPULATE, fd, 0);
   if (__glibc_unlikely(addr == MAP_FAILED)) {
     HANDLE_ERROR("mmap");
@@ -422,9 +423,11 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
   init_radixlog(&mmio->radixlog, len);
   mmio->start = addr;
   mmio->end = addr + len;
-  mmio->fsize = fsize;
+  // mmio->fsize = fsize;
+  mmio->fsize = len;
   mmio->ino = ino;
-  create_checkpoint_thread(mmio);
+  mmio->checkpoint_thread = 0;
+  // create_checkpoint_thread(mmio);
 
   return mmio;
 }

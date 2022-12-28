@@ -43,6 +43,8 @@ typedef struct index_entry_struct {
   struct slist_head list;
 } idx_entry_t;
 
+// const int a = sizeof(idx_entry_t);
+
 typedef struct table_struct {
   log_size_t log_size;
   table_type_t type;
