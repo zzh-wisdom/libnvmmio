@@ -41,6 +41,7 @@ typedef struct index_entry_struct {
   pthread_rwlock_t *rwlockp;
   log_size_t log_size;
   struct slist_head list;
+  // unsigned long paddings[2];
 } idx_entry_t;
 
 // const int a = sizeof(idx_entry_t);

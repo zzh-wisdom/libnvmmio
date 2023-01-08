@@ -10,7 +10,7 @@
 #define NR_ALLOC_TABLES (1UL << 19)
 #define NR_NODE_FILL 1024  // 即每次为thread local分配1024个idx node和log entry
 #define NR_MMIO_FILL 50
-#define DEFAULT_MMAP_SIZE (1 << 18) /* 1MB 注意这个要修改 */
+#define DEFAULT_MMAP_SIZE (1 << 30) /* 1MB 注意这个要修改 */
 #define HYBRID_WRITE_RATIO (40)
 #define SYNC_PERIOD (100)
 #define MAX_SKIP_NODES (2L)

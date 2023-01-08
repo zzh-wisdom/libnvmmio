@@ -43,6 +43,7 @@
       log_len_ = LOG_SIZE(log_size_) - log_offset_;                      \
       n_ -= log_len_;                                                    \
       off_ += log_len_;                                                  \
+      assert(n_ == 0);                                                   \
     }                                                                    \
   } while (0)
 
@@ -283,7 +284,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   bravo_read_lock(&mmio->rwlock);
 
   if (__glibc_unlikely(check_expend(mmio, offset, len))) {
-    // printf("WARNNING: expend_mmio\n");
+    printf("WARNNING: expend_mmio\n");
     expend_mmio(mmio, fd, offset, len);
   }
 
