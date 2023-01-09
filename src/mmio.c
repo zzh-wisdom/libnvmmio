@@ -43,7 +43,7 @@
       log_len_ = LOG_SIZE(log_size_) - log_offset_;                      \
       n_ -= log_len_;                                                    \
       off_ += log_len_;                                                  \
-      assert(n_ == 0);                                                   \
+      assert(n_ <= 0);                                                   \
     }                                                                    \
   } while (0)
 
