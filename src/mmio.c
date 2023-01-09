@@ -14,6 +14,48 @@
 #include "debug.h"
 #include "lock.h"
 
+inline static void apply_entry(mmio_t *mmio, idx_entry_t *entry) {
+  void *dst, *src;
+
+  if (entry->policy == REDO) {
+    dst = entry->dst + entry->offset;
+    src = entry->log;
+    NTSTORE(dst, src, entry->len);
+    FENCE();
+  }
+  // entry->epoch = mmio->epoch;
+  // entry->policy = mmio->policy;
+  // entry->len = 0;
+  // entry->offset = 0;
+  // FLUSH(entry, sizeof(idx_entry_t));
+  // FENCE();
+}
+
+inline static idx_entry_t *get_and_apply_log_entry(mmio_t* mmio, unsigned long epoch, log_table_t *table,
+                                  unsigned long index, log_size_t log_size) {
+  idx_entry_t *entry;
+
+  entry = table->entries[index];
+
+  if (entry == NULL) {
+    entry = alloc_idx_entry(log_size);
+    entry->epoch = epoch;
+
+    if (!__sync_bool_compare_and_swap(&table->entries[index], NULL, entry)) {
+      free_idx_entry(entry, log_size);
+      entry = table->entries[index];
+    }
+  } else {
+    assert(entry->epoch < mmio->epoch);
+    apply_entry(mmio, entry);
+    entry = alloc_idx_entry(log_size);
+    entry->epoch = epoch;
+    table->entries[index] = entry;
+  }
+
+  return entry;
+}
+
 #define LOCK_ENTRIES(type_, mmio_, offset_, len_, entries_head_)         \
   do {                                                                   \
     log_table_t *table_;                                                 \
@@ -31,7 +73,7 @@
       PRINT("TABLE index=%lu", index_);                                  \
                                                                          \
       do {                                                               \
-        entry_ = get_log_entry(mmio_->epoch, table_, index_, log_size_); \
+        entry_ = get_and_apply_log_entry(mmio_, mmio_->epoch, table_, index_, log_size_); \
       } while (pthread_rwlock_try##type_##lock(entry_->rwlockp) != 0);   \
                                                                          \
       PRINT(#type_ "lock idx_entry, offset=%lu", offset_);               \
@@ -43,7 +85,7 @@
       log_len_ = LOG_SIZE(log_size_) - log_offset_;                      \
       n_ -= log_len_;                                                    \
       off_ += log_len_;                                                  \
-      assert(n_ == 0);                                                   \
+      assert(n_ <= 0);                                                   \
     }                                                                    \
   } while (0)
 
@@ -302,23 +344,40 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   dst = mmio->start + offset;
   src = (void *)buf;
 
+  static char* file_log = NULL;
+  static int log_head = 4096;
+
   SLIST_FOR_EACH_ENTRY(entry, &entries_head, list) {
-    if (entry->epoch < mmio->epoch) {
-      checkpoint_entry(mmio, entry);
-    }
+    // if (entry->epoch < mmio->epoch) {
+    //   checkpoint_entry(mmio, entry);
+    // }
     log_size = entry->log_size;
+    assert(LOG_SIZE(log_size) == 4096);
     log_offset = off & (LOG_SIZE(log_size) - 1);
-    log_start = entry->log + log_offset;
+    // log_start = entry->log + log_offset;
     log_len = LOG_SIZE(log_size) - log_offset;
 
     n = len - ret;
-    if ((unsigned long)n > log_len) {
-      n = log_len;
+    assert(n <= log_len);
+    // if ((unsigned long)n > log_len) {
+    //   n = log_len;
+    // }
+    if(4096 - log_head < n) {
+      file_log = (char*)alloc_log_data(LOG_4K);
+      assert(file_log);
+      log_head = 0;
     }
+    assert(4096 - log_head >= n);
+    log_start = file_log + log_head;
+    entry->log = log_start;
+    log_head += n;
+    // printf("log_start: %p, len: %d\n", log_start, n);
+    // assert(0);
 
     switch (mmio->policy) {
       case UNDO:
         /* log <= original data */
+        assert(0);
         NTSTORE(log_start, dst, n);
         PRINT("undo logging: ntstore(%p, %p, %d)", log_start, dst, n);
         break;
@@ -333,57 +392,57 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
     }
 
     /* If data already exists in the log (overwriting) */
-    if (entry->len > 0 && (unsigned long)n != LOG_SIZE(log_size)) {
-      void *log_end, *prev_start, *prev_end, *overwrite_src;
-      size_t overwrite_len;
+    // if (entry->len > 0 && (unsigned long)n != LOG_SIZE(log_size)) {
+    //   void *log_end, *prev_start, *prev_end, *overwrite_src;
+    //   size_t overwrite_len;
 
-      log_end = log_start + n;
-      prev_start = entry->log + entry->offset;
-      prev_end = prev_start + entry->len;
+    //   log_end = log_start + n;
+    //   prev_start = entry->log + entry->offset;
+    //   prev_end = prev_start + entry->len;
 
-      switch (check_log(log_start, log_end, prev_start, prev_end)) {
-        case 1:
-          PRINT("overwrite case 1"); // 把之前的数据拷贝过来，合并成一整个log
-          overwrite_src = dst + n;
-          overwrite_len = prev_start - log_end;
-          NTSTORE(log_end, overwrite_src, overwrite_len);
-          entry->offset = log_offset;
-          entry->len = prev_end - log_start;
-          break;
-        case 2:
-          PRINT("overwrite case 2");
-          entry->offset = log_offset;
-          entry->len = prev_end - log_start;
-          break;
-        case 3:  // 全覆盖的情况下，还是需要修改idx entry，造成大量的随机小写
-          PRINT("overwrite case 3");
-          entry->offset = log_offset;
-          entry->len = n;
-          break;
-        case 4:
-          PRINT("overwrite case 4");
-          break;
-        case 5:
-          PRINT("overwrite case 5");
-          entry->len = log_end - prev_start;
-          break;
-        case 6:
-          PRINT("overwrite case 6");
-          overwrite_len = log_start - prev_end;
-          overwrite_src = dst - overwrite_len;
-          NTSTORE(prev_end, overwrite_src, overwrite_len);
-          entry->len = log_end - prev_start;
-          break;
-        default:
-          HANDLE_ERROR("check overwrite");
-          break;
-      }
-    } else {
+    //   switch (check_log(log_start, log_end, prev_start, prev_end)) {
+    //     case 1:
+    //       PRINT("overwrite case 1"); // 把之前的数据拷贝过来，合并成一整个log
+    //       overwrite_src = dst + n;
+    //       overwrite_len = prev_start - log_end;
+    //       NTSTORE(log_end, overwrite_src, overwrite_len);
+    //       entry->offset = log_offset;
+    //       entry->len = prev_end - log_start;
+    //       break;
+    //     case 2:
+    //       PRINT("overwrite case 2");
+    //       entry->offset = log_offset;
+    //       entry->len = prev_end - log_start;
+    //       break;
+    //     case 3:  // 全覆盖的情况下，还是需要修改idx entry，造成大量的随机小写
+    //       PRINT("overwrite case 3");
+    //       entry->offset = log_offset;
+    //       entry->len = n;
+    //       break;
+    //     case 4:
+    //       PRINT("overwrite case 4");
+    //       break;
+    //     case 5:
+    //       PRINT("overwrite case 5");
+    //       entry->len = log_end - prev_start;
+    //       break;
+    //     case 6:
+    //       PRINT("overwrite case 6");
+    //       overwrite_len = log_start - prev_end;
+    //       overwrite_src = dst - overwrite_len;
+    //       NTSTORE(prev_end, overwrite_src, overwrite_len);
+    //       entry->len = log_end - prev_start;
+    //       break;
+    //     default:
+    //       HANDLE_ERROR("check overwrite");
+    //       break;
+    //   }
+    // } else {
       entry->offset = log_offset;
       entry->len = n;
       entry->dst = (void *)((unsigned long)dst & LOG_MASK(log_size));
       entry->policy = mmio->policy;
-    }
+    // }
     FLUSH(entry, sizeof(idx_entry_t));
     PRINT("cache flush after updating the idx_entry");
 

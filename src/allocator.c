@@ -499,7 +499,8 @@ idx_entry_t *alloc_idx_entry(log_size_t log_size) {
 
   POP_PROVIDER(entry, idx_entry_t, local_idx_provider, global_idx_list);
 
-  entry->log = alloc_log_data(log_size);
+  // entry->log = alloc_log_data(log_size);
+  entry->log = NULL;
   // printf("entry: %p, entry size: 0x%lx, log: %p\n", entry, sizeof(idx_entry_t), entry->log);
   entry->list.next = NULL;
   RWLOCK_INIT(entry->rwlockp);

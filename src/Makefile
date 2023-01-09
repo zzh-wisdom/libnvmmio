@@ -1,4 +1,4 @@
-CFLAGS = -W -Wall -fPIC
+CFLAGS = -W -Wall -fPIC # -g
 # CFLAGS = -W -Wall -fPIC -g -DDEBUG
 
 LDFLAGS = -ldl -lpthread -lpmem
