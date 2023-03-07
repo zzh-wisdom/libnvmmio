@@ -8,11 +8,13 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <assert.h>
 
 #include "allocator.h"
 #include "config.h"
 #include "debug.h"
 #include "lock.h"
+#include "statistics.h"
 
 #define LOCK_ENTRIES(type_, mmio_, offset_, len_, entries_head_)         \
   do {                                                                   \
@@ -176,6 +178,7 @@ void checkpoint_mmio(mmio_t *mmio) {
   log_size_t log_size;
   void *dst, *src;
   unsigned long i, current_epoch, offset, endoff;
+  uint64_t file_write_start, pm_io_start;
 
   PRINT("start checkpointing: mmio->ino=%lu", mmio->ino);
 
@@ -193,24 +196,29 @@ void checkpoint_mmio(mmio_t *mmio) {
           entry = table->entries[i];
 
           if (entry && entry->epoch < current_epoch) {
+            // STATISTICS_START_TIMING(file_write_time, file_write_start);
             if (RWLOCK_WRITE_TRYLOCK(entry->rwlockp)) {
               if (entry->epoch < current_epoch) {
                 if (entry->policy == REDO) {
                   dst = entry->dst + entry->offset;
                   src = entry->log + entry->offset;
+                  // STATISTICS_START_TIMING(pm_io_time, pm_io_start);
                   NTSTORE(dst, src, entry->len);
                   PRINT("ntstore(%p, %p, %u)", dst, src, entry->len);
                   FENCE();
+                  // STATISTICS_END_TIMING(pm_io_time, pm_io_start);
                   PRINT("mfence()");
                 }
                 table->entries[i] = NULL;
                 free_idx_entry(entry, log_size);
                 PRINT("clear the idx_entry: offset=%lu, table idx=%lu", offset,
                       i);
+                // STATISTICS_END_TIMING(file_write_time, file_write_start);
                 continue;
               }
               RWLOCK_UNLOCK(entry->rwlockp);
             }
+            // STATISTICS_END_TIMING(file_write_time, file_write_start);
           }
         }
       }
@@ -242,18 +250,21 @@ void create_checkpoint_thread(mmio_t *mmio) {
   if (__glibc_unlikely(s != 0)) {
     HANDLE_ERROR("pthread_create");
   }
-  PRINT("create checkpoint thread: %lu",
+  printf("create checkpoint thread: %lu\n",
         (unsigned long)mmio->checkpoint_thread);
 }
 
 inline static void checkpoint_entry(mmio_t *mmio, idx_entry_t *entry) {
   void *dst, *src;
+  uint64_t pm_io_start;
 
   if (entry->policy == REDO) {
     dst = entry->dst + entry->offset;
     src = entry->log + entry->offset;
+    STATISTICS_START_TIMING(pm_io_time, pm_io_start);
     NTSTORE(dst, src, entry->len);
     FENCE();
+    STATISTICS_END_TIMING(pm_io_time, pm_io_start);
   }
   entry->epoch = mmio->epoch;
   entry->policy = mmio->policy;
@@ -273,15 +284,18 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   log_size_t log_size;
   int n;
   SLIST_HEAD(entries_head);
+  uint64_t file_write_start, pm_io_start;
 
   PRINT("mmio=%p, offset=%ld, buf=%p, len=%ld", mmio, offset, buf, len);
 
+  STATISTICS_START_TIMING(file_write_time, file_write_start);
   /*
    * Acquire the reader-locks of the mmio.
    */
   bravo_read_lock(&mmio->rwlock);
 
   if (__glibc_unlikely(check_expend(mmio, offset, len))) {
+    assert(0);
     expend_mmio(mmio, fd, offset, len);
   }
 
@@ -311,6 +325,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
       n = log_len;
     }
 
+    STATISTICS_START_TIMING(pm_io_time, pm_io_start);
     switch (mmio->policy) {
       case UNDO:
         /* log <= original data */
@@ -326,6 +341,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
         HANDLE_ERROR("policy error");
         break;
     }
+    STATISTICS_END_TIMING(pm_io_time, pm_io_start);
 
     /* If data already exists in the log (overwriting) */
     if (entry->len > 0 && (unsigned long)n != LOG_SIZE(log_size)) {
@@ -341,7 +357,9 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
           PRINT("overwrite case 1");
           overwrite_src = dst + n;
           overwrite_len = prev_start - log_end;
+          STATISTICS_START_TIMING(pm_io_time, pm_io_start);
           NTSTORE(log_end, overwrite_src, overwrite_len);
+          STATISTICS_END_TIMING(pm_io_time, pm_io_start);
           entry->offset = log_offset;
           entry->len = prev_end - log_start;
           break;
@@ -366,7 +384,9 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
           PRINT("overwrite case 6");
           overwrite_len = log_start - prev_end;
           overwrite_src = dst - overwrite_len;
+          STATISTICS_START_TIMING(pm_io_time, pm_io_start);
           NTSTORE(prev_end, overwrite_src, overwrite_len);
+          STATISTICS_END_TIMING(pm_io_time, pm_io_start);
           entry->len = log_end - prev_start;
           break;
         default:
@@ -392,10 +412,12 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
   PRINT("mfence");
 
   if (mmio->policy == UNDO) {
+    STATISTICS_START_TIMING(pm_io_time, pm_io_start);
     NTSTORE(mmio->start + offset, buf, len);
     PRINT("update the file after undo logging: ntstore(%p, %p, %lu)",
           mmio->start + offset, buf, len);
     FENCE();
+    STATISTICS_END_TIMING(pm_io_time, pm_io_start);
     PRINT("mfence");
   }
 
@@ -414,6 +436,7 @@ ssize_t mmio_write(mmio_t *mmio, int fd, off_t offset, const void *buf,
    */
   bravo_read_unlock(&mmio->rwlock);
 
+  STATISTICS_END_TIMING(file_write_time, file_write_start);
   return (ssize_t)ret;
 }
 

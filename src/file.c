@@ -12,6 +12,8 @@
 #include "file_hash.h"
 #include "libnvmmio.h"
 #include "lock.h"
+#include "statistics.h"
+#include <assert.h>
 
 struct fops_struct posix;
 file_t *fd_table[MAX_FD] = {
@@ -26,7 +28,7 @@ static void libnvmmio_open(int fd, int flags, int mode) {
   mmio_t *mmio;
   unsigned long fsize;
   unsigned long ino;
-  int s;
+  int s, ret;
 
   PRINT("fd=%d, flags=%d, mode=%d", fd, flags, mode);
 
@@ -65,6 +67,27 @@ static void libnvmmio_open(int fd, int flags, int mode) {
   pthread_mutex_init(&file->mutex, NULL);
 
   fd_table[fd] = file;
+
+  const uint64_t FILE_SIZE = 1ul << 30; // 1GB
+  const uint64_t FILE_4KB_NUM = FILE_SIZE >> 12;
+  void* buf = aligned_alloc(4096, 4096);
+  memset(buf, 0x3f, 4096);
+
+  MUTEX_LOCK(&file->mutex);
+  for(int i = 0; i < FILE_4KB_NUM; ++i) {
+    ret = mmio_write(file->mmio, fd, file->pos, buf, 4096);
+    file->pos += ret;
+    assert(ret == 4096);
+    if(i%1000 == 0) {
+      commit_mmio(file->mmio);
+    }
+  }
+  commit_mmio(file->mmio);
+  MUTEX_UNLOCK(&file->mutex);
+
+  sleep(3);
+  statistics_clear();
+  printf("statistics_clear, file_write_time=%lu, pm_io_time=%lu\n", file_write_time, pm_io_time);
 }
 
 void init_fops(void) {

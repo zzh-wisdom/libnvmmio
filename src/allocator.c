@@ -15,6 +15,7 @@
 #include "radixlog.h"
 #include "slist.h"
 #include "bravo.h"
+#include "statistics.h"
 
 #define DIR_PATH "%s/.libnvmmio-%lu"
 
@@ -70,7 +71,7 @@ flist_t *alloc_flist(unsigned long skip_unit) {
 
 inline fnode_t *get_fnode(void) {
   fnode_t *fnode;
-  fnode = (fnode_t *)malloc(sizeof(fnode));
+  fnode = (fnode_t *)malloc(sizeof(fnode_t));
   if (__glibc_unlikely(fnode == NULL)) {
     HANDLE_ERROR("malloc");
   }
@@ -164,6 +165,7 @@ static int get_env(void) {
 }
 
 static void __attribute__((destructor)) remove_logs(void) {
+  statistics_print();
   char filename[1024];
   DIR *dirptr = NULL;
   struct dirent *file = NULL;
