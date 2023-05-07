@@ -1,4 +1,5 @@
-CFLAGS = -W -Wall -fPIC -O3
+# CFLAGS = -W -Wall -fPIC -O3
+CFLAGS = -W -Wall -fPIC -O0
 #CFLAGS = -W -Wall -fPIC -g -DDEBUG
 
 LDFLAGS = -ldl -lpthread -lpmem
@@ -10,6 +11,6 @@ all : $(TARGET)
 
 $(TARGET) : $(OBJECTS)
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
-	
+
 clean :
 	$(RM) $(OBJECTS) $(TARGET)
