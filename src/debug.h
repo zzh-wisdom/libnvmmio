@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #define GiB (1UL << 30)
 #define MiB (1UL << 20)
@@ -27,6 +28,7 @@
   do {                                                                        \
     fprintf(stderr, "[%s:%d:%s] " fmt ": %s\n", __FILE__, __LINE__, __func__, \
             ##__VA_ARGS__, strerror(errno));                                  \
+    assert(0); \
     exit(EXIT_FAILURE);                                                       \
   } while (0)
 

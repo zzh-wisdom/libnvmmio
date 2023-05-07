@@ -404,6 +404,7 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
 
   if (fsize == 0) {
     len = DEFAULT_MMAP_SIZE;
+    printf("%s: posix_fallocate len %lu\n", __func__, len);
     s = posix_fallocate(fd, 0, len);
     if (__glibc_unlikely(s != 0)) {
       HANDLE_ERROR("posix_fallocate");
@@ -414,6 +415,7 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
 
   prot = get_prot(flags);
 
+  // printf("%s: mmap size: %lu MB\n", __func__, len >> 20);
   addr = mmap(NULL, len, prot, MAP_SHARED | MAP_POPULATE, fd, 0);
   if (__glibc_unlikely(addr == MAP_FAILED)) {
     HANDLE_ERROR("mmap");
@@ -422,9 +424,12 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
   init_radixlog(&mmio->radixlog, len);
   mmio->start = addr;
   mmio->end = addr + len;
-  mmio->fsize = fsize;
+  // mmio->fsize = fsize;
+  mmio->fsize = len;
   mmio->ino = ino;
-  create_checkpoint_thread(mmio);
+  mmio->checkpoint_thread = 0;
+  // 是否创建后台fsync线程
+  // create_checkpoint_thread(mmio);
 
   return mmio;
 }
@@ -495,6 +500,7 @@ idx_entry_t *alloc_idx_entry(log_size_t log_size) {
   POP_PROVIDER(entry, idx_entry_t, local_idx_provider, global_idx_list);
 
   entry->log = alloc_log_data(log_size);
+  // printf("entry: %p, entry size: 0x%lx, log: %p\n", entry, sizeof(idx_entry_t), entry->log);
   entry->list.next = NULL;
   RWLOCK_INIT(entry->rwlockp);
 

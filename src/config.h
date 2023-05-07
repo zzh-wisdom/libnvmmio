@@ -6,9 +6,9 @@
 #define FILE_HASH_SIZE MAX_FD
 #define NR_MMIOS (MAX_FD << 1)
 #define BASIC_MMAP_SIZE (1UL << 30) /* 64MB */
-#define LOG_FILE_SIZE (1UL << 32)   /* 4GB */
+#define LOG_FILE_SIZE (1UL << 33)   /* 4GB */
 #define NR_ALLOC_TABLES (1UL << 19)
-#define NR_NODE_FILL 1024
+#define NR_NODE_FILL 1024  // 即每次为thread local分配1024个idx node和log entry
 #define NR_MMIO_FILL 50
 #define DEFAULT_MMAP_SIZE (1 << 30) /* 1MB */
 #define HYBRID_WRITE_RATIO (40)

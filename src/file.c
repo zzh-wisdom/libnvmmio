@@ -155,10 +155,13 @@ int open(const char *pathname, int flags, ...) {
 
   fd = posix.open(pathname, flags, mode);
   PRINT("pathname=%s, flags=%d, fd=%d", pathname, flags, fd);
+  printf("pathname=%s, flags=%d, fd=%d\n", pathname, flags, fd);
 
-  if (flags & O_ATOMIC) {
+  if (flags & O_ATOMIC || strncmp(pathname, DEFAULT_PMEM_PATH, strlen(DEFAULT_PMEM_PATH)) == 0) {
+    printf("\n libnvmmio_open\n");
     libnvmmio_open(fd, flags, mode);
   }
+  printf("\nopen fd: %d\n", fd);
   return fd;
 }
 
@@ -181,8 +184,11 @@ int open64(const char *pathname, int flags, ...) {
 
   fd = posix.open64(pathname, flags, mode);
   PRINT("pathname=%s, flags=%d, fd=%d", pathname, flags, fd);
+  // printf("pathname=%s, flags=%d, fd=%d\n", pathname, flags, fd);
+  assert(fd > 0);
 
-  if (flags & O_ATOMIC) {
+  if (flags & O_ATOMIC  || strncmp(pathname, DEFAULT_PMEM_PATH, strlen(DEFAULT_PMEM_PATH)) == 0) {
+    // printf("\n libnvmmio_open: %s\n", pathname);
     libnvmmio_open(fd, flags, mode);
   }
   return fd;
@@ -199,6 +205,7 @@ ssize_t read(int fd, void *buf, size_t len) {
   if (__glibc_likely(file != NULL)) {
     MUTEX_LOCK(&file->mutex);
 
+    // printf("mmio_read\n");
     ret = mmio_read(file->mmio, file->pos, buf, len);
     file->pos += ret;
 
@@ -214,6 +221,7 @@ ssize_t read(int fd, void *buf, size_t len) {
     }
   }
 
+  // printf("posix read\n");
   return posix.read(fd, buf, len);
 }
 
@@ -228,8 +236,14 @@ ssize_t write(int fd, const void *buf, size_t len) {
   if (__glibc_likely(file != NULL)) {
     MUTEX_LOCK(&file->mutex);
 
+    // if(len < 4096) printf("mmio_write, file->pos: %u, len: %lu\n", file->pos, len);
     ret = mmio_write(file->mmio, fd, file->pos, buf, len);
     file->pos += ret;
+    // if(ret != len) {
+    //   printf("ret: %d, len: %lu\n", ret, len);
+    //   ret = len;
+    //   // assert(0);
+    // }
 
     MUTEX_UNLOCK(&file->mutex);
     return ret;
@@ -242,6 +256,7 @@ ssize_t write(int fd, const void *buf, size_t len) {
     }
   }
 
+  // printf("posix write\n");
   return posix.write(fd, buf, len);
 }
 
@@ -278,6 +293,7 @@ int fsync(int fd) {
 
   file = get_file(fd);
   if (file != NULL) {
+    // printf("fsync commit_mmio\n");
     MUTEX_LOCK(&file->mutex);
     commit_mmio(file->mmio);
     MUTEX_UNLOCK(&file->mutex);
@@ -375,7 +391,7 @@ int truncate(const char *path, off_t length) {
 }
 
 int ftruncate(int fd, off_t length) {
-  PRINT("call");
+  printf("call\n");
 
   if (__glibc_unlikely(posix.ftruncate == NULL)) {
     posix.ftruncate = dlsym(RTLD_NEXT, "ftruncate");
@@ -419,6 +435,7 @@ int close(int fd) {
   PRINT("fd=%d", fd);
 
   if (fd_table[fd] != NULL) {
+    // printf("libnvmmio close\n");
     file = fd_table[fd];
     MUTEX_LOCK(&file->mutex);
     delete_mmio_hash(fd, file);
@@ -440,7 +457,9 @@ int close(int fd) {
 
 static void init_libnvmmio(void) {
   init_fops();
+  PRINT("init_allocator...");
   init_allocator();
+  PRINT("init_allocator...");
   init_file_hash();
 }
 
