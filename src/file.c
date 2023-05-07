@@ -87,7 +87,7 @@ static void libnvmmio_open(int fd, int flags, int mode) {
 
   sleep(3);
   statistics_clear();
-  printf("statistics_clear, file_write_time=%lu, pm_io_time=%lu\n", file_write_time, pm_io_time);
+  // printf("statistics_clear, file_write_time=%lu, pm_io_time=%lu\n", file_write_time, pm_io_time);
 }
 
 void init_fops(void) {

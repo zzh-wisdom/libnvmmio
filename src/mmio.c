@@ -250,8 +250,8 @@ void create_checkpoint_thread(mmio_t *mmio) {
   if (__glibc_unlikely(s != 0)) {
     HANDLE_ERROR("pthread_create");
   }
-  printf("create checkpoint thread: %lu\n",
-        (unsigned long)mmio->checkpoint_thread);
+  // printf("create checkpoint thread: %lu\n",
+  //       (unsigned long)mmio->checkpoint_thread);
 }
 
 inline static void checkpoint_entry(mmio_t *mmio, idx_entry_t *entry) {
