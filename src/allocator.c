@@ -70,7 +70,7 @@ flist_t *alloc_flist(unsigned long skip_unit) {
 
 inline fnode_t *get_fnode(void) {
   fnode_t *fnode;
-  fnode = (fnode_t *)malloc(sizeof(fnode));
+  fnode = (fnode_t *)malloc(sizeof(fnode_t));
   if (__glibc_unlikely(fnode == NULL)) {
     HANDLE_ERROR("malloc");
   }
@@ -410,13 +410,14 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
       HANDLE_ERROR("posix_fallocate");
     }
   } else {
+    // printf("%s: fsize %lu\n", __func__, fsize);
     len = fsize;
   }
 
   prot = get_prot(flags);
 
-  // printf("%s: mmap size: %lu MB\n", __func__, len >> 20);
-  addr = mmap(NULL, len, prot, MAP_SHARED | MAP_POPULATE, fd, 0);
+  // printf("%s: mmap size: %lu MB, flags: %d, prot: %d\n", __func__, len >> 20, flags, prot);
+  addr = mmap(NULL, len, PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, 0);
   if (__glibc_unlikely(addr == MAP_FAILED)) {
     HANDLE_ERROR("mmap");
   }
@@ -429,7 +430,7 @@ mmio_t *get_new_mmio(int fd, int flags, unsigned long ino,
   mmio->ino = ino;
   mmio->checkpoint_thread = 0;
   // 是否创建后台fsync线程
-  // create_checkpoint_thread(mmio);
+  create_checkpoint_thread(mmio);
 
   return mmio;
 }

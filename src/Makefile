@@ -1,6 +1,6 @@
 # CFLAGS = -W -Wall -fPIC -O3
 CFLAGS = -W -Wall -fPIC -O0
-#CFLAGS = -W -Wall -fPIC -g -DDEBUG
+# CFLAGS = -W -Wall -fPIC -g -DDEBUG
 
 LDFLAGS = -ldl -lpthread -lpmem
 TARGET = libnvmmio.so

@@ -2,7 +2,7 @@
 
 [global]
 ; 目录需要事先存在
-directory=/mnt/pmem2
+directory=/mnt/pmem0
 # direct=1
 # buffered=0
 thread=1
@@ -19,22 +19,33 @@ ioengine=sync
 # 运行完负载后，删除文件
 # unlink=1
 # openfiles=1
-description=顺序写文件,单个线程单独一个文件,io大小变化
-size=128M
+cpus_allowed_policy=split
+numa_cpu_nodes=1
+numa_mem_policy=bind:1
+kb_base=1024
+time_based
+runtime=20
+description=随机写文件,每个线程单独一个文件
+size=1G
+overwrite=1
+rw=randwrite
 bs=4K
-numjobs=1
+
+[seq-write-32]
+wait_for_previous
+numjobs=32
 
 # 加载
 # [seq-write-4K]
 # wait_for_previous
 # overwrite=0
 
-[seq-write-4K]
-wait_for_previous
-rw=read
-# overwrite=1
-time_based
-runtime=30
+# [seq-write-4K]
+# wait_for_previous
+# rw=read
+# # overwrite=1
+# time_based
+# runtime=30
 
 # [seq-read-4K]
 # wait_for_previous
